@@ -13,8 +13,6 @@ metadata = MetaData(naming_convention={
 
 from config import db
 
-# Models go here!
-
 class User(db.Model, SerializerMixin):
     __tablename__ = 'users'
 
@@ -115,6 +113,7 @@ class Date(db.Model, SerializerMixin):
             "date": str(self.date),
             "time": str(self.time),
             "description": self.description,
+             "category_id": self.category_id,
             "category": self.category.name if self.category else None,
             "activities": [activity.to_dict() for activity in self.activities]
         }

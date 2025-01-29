@@ -4,6 +4,8 @@ from flask_migrate import Migrate
 from flask_restful import Api, Resource
 from werkzeug.security import check_password_hash, generate_password_hash
 from models import db, User, Category, Activity, Date
+from datetime import datetime
+
 
 app = Flask(__name__)
 app.secret_key = 'BAD_SECRET_KEY'
@@ -135,18 +137,6 @@ class Dates(Resource):
         response_dict_list = [date.to_dict() for date in dates]
         response = make_response(response_dict_list, 200)
         return response
-    
-    #  def get(self):
-    #     user_id = session.get('user_id')
-    #     if not user_id:
-    #         return {'error': 'User not logged in'}, 401
-
-    #     # Fetch dates specific to the logged-in user
-    #     dates = Date.query.filter_by(user_id=user_id).all()
-
-    #     # Serialize the dates
-    #     response_dict_list = [date.to_dict() for date in dates]
-    #     return make_response(response_dict_list, 200)
 
     def post(self):
         user_id = session.get('user_id')
@@ -154,9 +144,8 @@ class Dates(Resource):
             return {'error': 'User not logged in'}, 401
 
         new_record = Date(
-            name=request.json['name'],
-            date=request.json['date'],
-            time=request.json['time'],
+            date=datetime.strptime(request.json['date'], "%Y-%m-%d").date(),
+            time=datetime.strptime(request.json['time'], "%H:%M:%S").time(),
             description=request.json['description'],
             user_id=user_id,
             category_id=request.json['category_id']
@@ -166,8 +155,7 @@ class Dates(Resource):
         db.session.commit()
 
         response_dict = new_record.to_dict()
-        response = make_response(response_dict, 201)
-        return response
+        return make_response(response_dict, 201)
 
 api.add_resource(Dates, '/dates')
 
@@ -188,11 +176,25 @@ class DatesByID(Resource):
         return make_response(response, 200)
 
     def patch(self, id):
-        record = Date.query.filter_by(id=id).first()
+        record = Date.query.filter_by(id=id, user_id=session.get('user_id')).first()
         if not record:
             return {'error': 'Date not found'}, 404
 
         data = request.json
+
+        if 'date' in data:
+            try:
+                data['date'] = datetime.strptime(data['date'], "%Y-%m-%d").date()
+            except ValueError:
+                return {"error": "Invalid date format, Use YYYY-MM-DD."}, 400
+            
+
+        if 'time' in data:
+            try:
+                data['time'] = datetime.strptime(data['time'], "%H:%M:%S").time()
+            except ValueError:
+                return {'error': 'Invalid time format, Use HH:MM:SS.'}, 400
+
         for attr, value in data.items():
             setattr(record, attr, value)
 
@@ -205,7 +207,12 @@ class DatesByID(Resource):
         return make_response(record.to_dict(), 200)
 
     def delete(self, id):
-        record = Date.query.filter_by(id=id).first()
+
+        user_id = session.get('user_id')
+        if not user_id:
+            return {'error': 'User not logged in'}, 401
+        
+        record = Date.query.filter_by(id=id, user_id=user_id).first()
         if not record:
             return {'error': 'Date not found'}, 404
 
@@ -221,14 +228,13 @@ class UserCategoriesWithDates(Resource):
         if not user_id:
             return {'error': 'User not logged in'}, 401
 
-        categories = Category.query.join(Date).filter(Date.user_id == user_id).all()
+        categories = (Category.query.join(Date).filter(Date.user_id == user_id).distinct().all())
 
-        # Serialize categories with nested dates
         result = [
             {
                 "id": category.id,
                 "name": category.name,
-                "dates": [date.to_dict() for date in category.dates if date.user_id == user_id]
+                "dates": [date.to_dict() for date in category.dates if date.user_id == user_id],
             }
             for category in categories
         ]
